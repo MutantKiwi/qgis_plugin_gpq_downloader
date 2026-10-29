@@ -24,6 +24,9 @@ from .dialog import DataSourceDialog
 from .logger import message_level
 from .utils import Worker
 
+MENU_NAME = "&GeoParquet Downloader"
+DOWNLOAD_DIR_SETTING = "gpq_downloader/download_dir"
+
 
 def custom_file_stem(url):
     """A file name stem for a custom URL: the file's name, or the folder a glob reads.
@@ -54,10 +57,45 @@ class QgisPluginGeoParquet:
         self.output_file = None
         self.clip_to_area = False  # from the dialog's "Clip features to the area" box
         self._duckdb_message = None  # our widget on the shared QGIS message bar
-        # Create a default downloads directory in user's home directory
-        self.download_dir = Path.home() / "Downloads"
-        # Create the directory if it doesn't exist
-        self.download_dir.mkdir(parents=True, exist_ok=True)
+        self.folder_action = None
+        self.download_dir = self.load_download_dir()
+
+    @staticmethod
+    def default_download_dir():
+        """The folder used until the user picks one: ~/Downloads."""
+        return Path.home() / "Downloads"
+
+    def load_download_dir(self):
+        """The saved download folder, or ~/Downloads if none is saved or it has gone."""
+        saved = QgsSettings().value(
+            DOWNLOAD_DIR_SETTING, "", type=str, section=QgsSettings.Section.Plugins
+        )
+        if saved and Path(saved).is_dir():
+            return Path(saved)
+        folder = self.default_download_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
+    def choose_download_dir(self):
+        """Ask for the folder downloads are saved to by default, and remember it."""
+        folder = QFileDialog.getExistingDirectory(
+            self.iface.mainWindow(),
+            "Select Download Folder",
+            str(self.download_dir),
+        )
+        if not folder:
+            return None
+        self.download_dir = Path(folder)
+        QgsSettings().setValue(
+            DOWNLOAD_DIR_SETTING, folder, section=QgsSettings.Section.Plugins
+        )
+        self.iface.messageBar().pushMessage(
+            "GeoParquet Downloader",
+            f"Downloads will be saved to {folder}",
+            message_level("Info"),
+            5,
+        )
+        return self.download_dir
 
     def initGui(self):
         # Create the action with the icon and tooltip
@@ -69,8 +107,14 @@ class QgisPluginGeoParquet:
         self.action.setToolTip("Download GeoParquet Data")
         self.action.triggered.connect(self.run)
 
-        # Add the actions to the toolbar
+        self.folder_action = QAction("Set Download Folder...", self.iface.mainWindow())
+        self.folder_action.setToolTip("Choose the folder downloads are saved to by default")
+        self.folder_action.triggered.connect(self.choose_download_dir)
+
+        # Toolbar button, plus both actions under Plugins > GeoParquet Downloader
         self.iface.addToolBarIcon(self.action)
+        self.iface.addPluginToMenu(MENU_NAME, self.action)
+        self.iface.addPluginToMenu(MENU_NAME, self.folder_action)
         self.check_duckdb(startup=True)
 
     def check_duckdb(self, startup=False):
@@ -188,8 +232,11 @@ class QgisPluginGeoParquet:
         self._pop_duckdb_message()
         # A pip install still running must not call back into this dead instance
         duckdb_setup.detach()
-        # Remove all actions from the toolbar
+        # Remove our actions from the toolbar and the Plugins menu
         self.iface.removeToolBarIcon(self.action)
+        self.iface.removePluginMenu(MENU_NAME, self.action)
+        if self.folder_action is not None:
+            self.iface.removePluginMenu(MENU_NAME, self.folder_action)
 
     def run(self, default_source=None):
         if not self.check_duckdb():

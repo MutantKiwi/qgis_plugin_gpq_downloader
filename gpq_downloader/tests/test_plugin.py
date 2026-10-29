@@ -197,3 +197,88 @@ def test_plugin_cleanup_thread(mock_thread, qgs_app, mock_iface):
     assert plugin.worker is None
     assert plugin.worker_thread is None
 
+
+
+def test_plugin_init_gui_adds_plugins_menu(qgs_app, mock_iface):
+    """Both actions appear under Plugins > GeoParquet Downloader, and unload removes them"""
+    from gpq_downloader.plugin import MENU_NAME
+
+    plugin = QgisPluginGeoParquet(mock_iface)
+    plugin.initGui()
+
+    assert (MENU_NAME, plugin.action) in mock_iface.plugin_menu
+    assert (MENU_NAME, plugin.folder_action) in mock_iface.plugin_menu
+    assert plugin.folder_action.text() == "Set Download Folder..."
+
+    plugin.unload()
+    assert mock_iface.plugin_menu == []
+    assert mock_iface.toolbar_icons == []
+
+
+@patch('gpq_downloader.plugin.QgsSettings')
+def test_plugin_uses_saved_download_dir(mock_settings, qgs_app, mock_iface, tmp_path):
+    """A saved folder that still exists becomes the download folder"""
+    mock_settings.return_value.value.return_value = str(tmp_path)
+    plugin = QgisPluginGeoParquet(mock_iface)
+    assert plugin.download_dir == tmp_path
+
+
+@patch('gpq_downloader.plugin.QgsSettings')
+def test_plugin_missing_saved_dir_falls_back(mock_settings, qgs_app, mock_iface, tmp_path):
+    """A saved folder that has since been deleted falls back to ~/Downloads"""
+    mock_settings.return_value.value.return_value = str(tmp_path / "gone")
+    with patch.object(QgisPluginGeoParquet, 'default_download_dir', return_value=tmp_path / "dl"):
+        plugin = QgisPluginGeoParquet(mock_iface)
+    assert plugin.download_dir == tmp_path / "dl"
+    assert plugin.download_dir.is_dir()
+
+
+@patch('gpq_downloader.plugin.QgsSettings')
+@patch('gpq_downloader.plugin.QFileDialog.getExistingDirectory')
+def test_plugin_choose_download_dir_saves_setting(mock_pick, mock_settings, qgs_app, mock_iface, tmp_path):
+    """Picking a folder updates the plugin and stores it in QgsSettings"""
+    from gpq_downloader.plugin import DOWNLOAD_DIR_SETTING
+
+    mock_settings.return_value.value.return_value = ""
+    plugin = QgisPluginGeoParquet(mock_iface)
+    mock_pick.return_value = str(tmp_path)
+
+    assert plugin.choose_download_dir() == tmp_path
+    assert plugin.download_dir == tmp_path
+    mock_settings.return_value.setValue.assert_called_once()
+    assert mock_settings.return_value.setValue.call_args[0][:2] == (DOWNLOAD_DIR_SETTING, str(tmp_path))
+
+
+@patch('gpq_downloader.plugin.QgsSettings')
+@patch('gpq_downloader.plugin.QFileDialog.getExistingDirectory', return_value="")
+def test_plugin_choose_download_dir_cancel(mock_pick, mock_settings, qgs_app, mock_iface):
+    """Cancelling the folder picker changes nothing"""
+    mock_settings.return_value.value.return_value = ""
+    plugin = QgisPluginGeoParquet(mock_iface)
+    before = plugin.download_dir
+
+    assert plugin.choose_download_dir() is None
+    assert plugin.download_dir == before
+    mock_settings.return_value.setValue.assert_not_called()
+
+
+@patch('gpq_downloader.plugin.QFileDialog.getSaveFileName')
+def test_plugin_save_dialog_starts_in_download_dir(mock_save_dialog, qgs_app, mock_iface, tmp_path):
+    """The save dialog proposes a file inside the chosen download folder"""
+    plugin = QgisPluginGeoParquet(mock_iface)
+    plugin.download_dir = tmp_path
+
+    dialog = MagicMock()
+    dialog.get_urls.return_value = ["https://example.com/data/rivers.parquet"]
+    dialog.overture_radio.isChecked.return_value = False
+    dialog.sourcecoop_radio.isChecked.return_value = False
+    dialog.osm_radio.isChecked.return_value = False
+    dialog.get_current_extent.return_value = None
+    dialog.aoi_geometry = None
+    mock_save_dialog.return_value = ("", "")  # user cancels; we only check the proposal
+
+    plugin.handle_dialog_accepted(dialog)
+
+    proposed = Path(mock_save_dialog.call_args[0][2])
+    assert proposed.parent == tmp_path
+    assert proposed.name.startswith("rivers_")
