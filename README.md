@@ -31,6 +31,10 @@ The plugin will install 1 button on the "Plugin" QGIS toolbar, that you might ha
 
 ![1_UuUno32b4P_UNUqJZvSPoQ](https://github.com/user-attachments/assets/16003294-9a76-42cb-a740-b5bbd308e484)
 
+The same command is also under **Plugins > GeoParquet Downloader > Download GeoParquet Data**, so you can use the plugin with the toolbar hidden.
+
+Downloads are saved to your `Downloads` folder by default. To change it, use **Plugins > GeoParquet Downloader > Set Download Folder...**. The folder you pick is remembered between QGIS sessions, and every save dialog starts there (you can still choose a different location for any one download).
+
 It opens a dialog box, that lets you select Overture and Source Cooperative, OpenStreetMap or 'custom' - where you 
 can enter the location of any GeoParquet or partition file online.
 

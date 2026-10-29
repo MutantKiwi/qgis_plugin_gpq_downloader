@@ -24,6 +24,7 @@ class MockIface(QObject):
         self.canvas = MockCanvas()
         self._window = QMainWindow()
         self.toolbar_icons = []  # Add this to track added icons
+        self.plugin_menu = []  # (menu name, action) pairs under the Plugins menu
     
     def mapCanvas(self):
         return self.canvas
@@ -39,6 +40,21 @@ class MockIface(QObject):
         """Mock method for removing toolbar icons"""
         if action in self.toolbar_icons:
             self.toolbar_icons.remove(action)
+
+    def addPluginToMenu(self, name, action):
+        """Mock method for adding an action under the Plugins menu"""
+        self.plugin_menu.append((name, action))
+
+    def removePluginMenu(self, name, action):
+        """Mock method for removing an action from the Plugins menu"""
+        if (name, action) in self.plugin_menu:
+            self.plugin_menu.remove((name, action))
+
+    def messageBar(self):
+        if not hasattr(self, "_bar"):
+            from unittest.mock import MagicMock
+            self._bar = MagicMock()
+        return self._bar
 
 class MockCanvas:
     def __init__(self):
